@@ -18,6 +18,7 @@ def public_content(directory):
             'coverage':str(content.get('coverage','No source recap has been published yet.')),
             'tasks':[{k:str(t.get(k,'') or '') for k in ('id','title','status','due_date','planned_date','completed_date','task_id','source')} for t in content.get('tasks',[])],
             'recommendations':[{k:str(t.get(k,'') or '') for k in ('text','basis')} for t in content.get('recommendations',[])],
+            'source_notes':[{k:str(n.get(k,'') or '') for k in ('id','title','text','updated_at','source')} for n in content.get('source_notes',[])],
             'focus':[str(x) for x in content.get('focus',[])],
             'updates':[{k:str(u.get(k,'') or '') for k in ('date','task_id','title','summary','result','next_step','evidence_ref','kind')} for u in content.get('updates',[])],
             'resources':[{k:str(r.get(k,'')) for k in ('id','title','description','category','url')} for r in content.get('resources',[]) if safe_url(r.get('url')) or (not r.get('url') and shared_file(directory,r.get('id')) is not None)]}
@@ -36,7 +37,7 @@ def public_content(directory):
         value=connections.get(name,{}) if isinstance(connections,dict) else {}
         if not isinstance(value,dict):value={}
         status=value.get('status','not_connected')
-        if status not in {'not_connected','pending_credentials','unverified','verified','unavailable'}:status='unverified'
+        if status not in {'not_connected','pending_credentials','unverified','verified','partial','unavailable'}:status='unverified'
         checked=value.get('checked_at')
         from .recap import iso_day
         checked=checked if isinstance(checked,str) and iso_day(checked) else None
