@@ -1,0 +1,30 @@
+{
+  "title": "SABRE polarizer",
+  "summary": "Research overview for collaborators: V1 experiments, the V2 platform, instrumentation, and automated separation. Explore the original roadmap to see how the work fits together.",
+  "updated": null,
+  "focus": [],
+  "updates": [],
+  "resources": [],
+  "tasks": [],
+  "recommendations": [],
+  "source_as_of": null,
+  "coverage": "No task or research recap has been published yet. Counts below cover shared records only.",
+  "calendar": {
+    "id": "adavidss@umd.edu",
+    "timezone": "America/New_York"
+  },
+  "source_connections": {
+    "calendar": {
+      "status": "unverified",
+      "checked_at": null
+    },
+    "notion": {
+      "status": "pending_credentials",
+      "checked_at": null
+    },
+    "todoist": {
+      "status": "pending_credentials",
+      "checked_at": null
+    }
+  }
+}
