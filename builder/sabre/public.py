@@ -28,6 +28,14 @@ def public_content(directory):
             if not safe_url(item.get('url')):item['url']=''
     result['resources']=[r for r in result['resources'] if r['url'] or shared_file(directory,r['id']) is not None]
     # Do not export calendar IDs, conference links, attendee details, or raw embeds.
+    cfg=content.get('display',{})
+    if not isinstance(cfg,dict):cfg={}
+    result['display']={k:cfg.get(k,True) is True for k in ('show_roadmap','show_calendar','show_tasks','show_resources','show_milestones','show_changes')}
+    result['display']['intro']=str(cfg.get('intro','V1 experiments, V2 construction, instrumentation and separation.'))[:600]
+    result['display']['theme']=cfg.get('theme') if cfg.get('theme') in ('navy','teal','purple') else 'navy'
+    for key,default,maximum in [('calendar_days',14,90),('task_limit',12,100),('resource_limit',4,20)]:
+        try:result['display'][key]=max(1,min(maximum,int(cfg.get(key,default))))
+        except (ValueError,TypeError):result['display'][key]=default
     connections=content.get('source_connections',{})
     result['source_connections']={}
     for name in ('calendar','todoist'):
