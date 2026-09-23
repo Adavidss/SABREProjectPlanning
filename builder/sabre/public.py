@@ -16,12 +16,18 @@ def public_content(directory):
             'source_as_of':content.get('source_as_of'),
             'source_status':str(content.get('source_status','unknown')),
             'coverage':str(content.get('coverage','No source recap has been published yet.')),
-            'tasks':[{k:str(t.get(k,'') or '') for k in ('id','title','status','due_date','planned_date','completed_date','task_id','source')} for t in content.get('tasks',[])],
+            'tasks':[{k:str(t.get(k,'') or '') for k in ('id','title','status','due_date','planned_date','completed_date','task_id','source','project_id','project_name','section_id','section_name','section_order','task_order','parent_id','url')} for t in content.get('tasks',[])],
             'recommendations':[{k:str(t.get(k,'') or '') for k in ('text','basis')} for t in content.get('recommendations',[])],
-            'source_notes':[{k:str(n.get(k,'') or '') for k in ('id','title','text','updated_at','source')} for n in content.get('source_notes',[])],
+            'source_notes':[{k:str(n.get(k,'') or '') for k in ('id','title','text','updated_at','source','url')} for n in content.get('source_notes',[])],
             'focus':[str(x) for x in content.get('focus',[])],
             'updates':[{k:str(u.get(k,'') or '') for k in ('date','task_id','title','summary','result','next_step','evidence_ref','kind')} for u in content.get('updates',[])],
             'resources':[{k:str(r.get(k,'')) for k in ('id','title','description','category','url')} for r in content.get('resources',[]) if safe_url(r.get('url')) or (not r.get('url') and shared_file(directory,r.get('id')) is not None)]}
+    for name in ('tasks','source_notes'):
+        for item, original in zip(result[name],content.get(name,[])):
+            if not safe_url(item.get('url')):item['url']=''
+            if name=='source_notes':
+                bullets=original.get('summary_bullets',[])
+                item['summary_bullets']=[b for b in bullets[:3] if isinstance(b,str) and len(b)<=500] if isinstance(bullets,list) else []
     calendar=content.get('calendar',{})
     if isinstance(calendar,dict):
         identifier=calendar.get('id','')

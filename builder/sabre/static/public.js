@@ -2,9 +2,6 @@
 const staticSite=document.body.dataset.static==='true';
 let data,view='overview',period='day',requestSequence=0,ganttSettings={};
 const $=s=>document.querySelector(s),e=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-function ganttLink(id){return data.roadmap.rows.some(x=>x.id===id)?`<button class="inline-link" data-open-task="${e(id)}">View on Gantt · ${e(id)} ↗</button>`:e(id||'No Gantt match');}
-function taskList(tasks,done=false){return tasks.map(t=>`<div class="digest-task"><span class="status-mark">${done?'✓':t.status==='blocked'?'!':'○'}</span><div><b>${e(t.title)}</b><small>${ganttLink(t.task_id)} · ${done?'Completed '+e(t.completed_date):e(t.status==='blocked'?'Blocked':'Unfinished')+(t.due_date?' · Due '+e(t.due_date):'')}</small>${t.attention_reason?`<small class="attention-reason">${e(t.attention_reason)}</small>`:''}</div></div>`).join('');}
-function finding(u){return `<article class="finding"><small>${e(u.date)} · ${ganttLink(u.task_id)}</small><h3>${['decision','blocker','result'].includes(u.kind)?`<span class="update-kind ${e(u.kind)}">${e(u.kind)}</span> `:''}${e(u.title)}</h3><p class="evidence">${e(u.result||u.summary)}</p>${u.next_step?`<p><b>Next step:</b> ${e(u.next_step)}</p>`:''}${u.evidence_ref||u.result&&u.summary?`<details><summary>Evidence & context</summary>${u.result?`<p class="evidence">${e(u.summary)}</p>`:''}<small>${e(u.evidence_ref)}</small></details>`:''}</article>`;}
 function recapLine(text){
  if(text.length<=320)return `<p>${e(text)}</p>`;
  const boundary=text.lastIndexOf(' ',300),preview=text.slice(0,boundary>100?boundary:300);
@@ -18,42 +15,42 @@ function restoreGanttSettings(){
  }
  drawRoadmap();
 }
+function sourceLink(url,label='Open source ↗'){
+ try{const u=new URL(url);return u.protocol==='https:'&&!u.username&&!u.password?`<a href="${e(u.href)}" target="_blank" rel="noopener noreferrer">${e(label)}</a>`:'';}catch{return '';}
+}
+function jump(target,label){return `<button class="inline-link" data-jump="${target}">${label} ↗</button>`;}
+function notesFeed(limit=Infinity){
+ const notes=[...(data.overview.source_notes||[])].sort((a,b)=>(b.updated_at||'').localeCompare(a.updated_at||''));
+ return notes.slice(0,limit).map(n=>`<article class="source-note"><small class="source-tag">${e(n.source||'Source')} · Edited ${e(n.updated_at||'date unavailable')}</small><h3>${e(n.title)}</h3>${n.summary_bullets?.length?`<ul>${n.summary_bullets.slice(0,3).map(b=>`<li>${e(b)}</li>`).join('')}</ul><details><summary>Original note</summary><p class="evidence">${e(n.text)}</p></details>`:recapLine(n.text)}${sourceLink(n.url)}</article>`).join('')||'<p class="empty">No notes published yet.</p>';
+}
+function todoistTree(activeOnly=false){
+ const tasks=(data.overview.tasks||[]).filter(t=>t.source==='Todoist'||t.id?.startsWith('todoist:')).filter(t=>!activeOnly||!['completed','cancelled'].includes(t.status));
+ const projects=new Map();for(const t of tasks){const id=t.project_id||'';if(!projects.has(id))projects.set(id,[]);projects.get(id).push(t);}
+ return [...projects].map(([id,rows])=>{const sections=new Map();for(const t of rows){const key=t.section_id||'';if(!sections.has(key))sections.set(key,[]);sections.get(key).push(t);}
+ return `<section class="todoist-project"><h3>${e(rows[0].project_name|| (id?'Todoist project · '+id:'Todoist · project not supplied'))}</h3>${[...sections].sort((a,b)=>Number(a[1][0].section_order||0)-Number(b[1][0].section_order||0)).map(([sid,items])=>{
+ items.sort((a,b)=>Number(a.task_order||0)-Number(b.task_order||0));
+ const ordered=[],visited=new Set();const visit=t=>{if(visited.has(t))return;visited.add(t);ordered.push(t);items.filter(x=>x.parent_id&&(t.id==='todoist:'+x.parent_id||t.id===x.parent_id)).forEach(visit);};items.filter(t=>!t.parent_id||!items.some(x=>x.id==='todoist:'+t.parent_id||x.id===t.parent_id)).forEach(visit);items.forEach(visit);
+ const depth=t=>{let d=0,p=t.parent_id,seen=new Set([t.id]);while(p&&d<5){const parent=items.find(x=>x.id==='todoist:'+p||x.id===p);if(!parent||seen.has(parent.id))break;seen.add(parent.id);d++;p=parent.parent_id;}return d;};
+ return `<div class="todoist-section">${sid||items[0].section_name?`<h4>${e(items[0].section_name||'Section · '+sid)}</h4>`:''}<ul>${ordered.map(t=>`<li style="--depth:${depth(t)}"><span aria-hidden="true">${t.status==='completed'?'✓':'○'}</span><div>${sourceLink(t.url,t.title)||e(t.title)}<small>${t.due_date?'Due '+e(t.due_date)+' · ':''}${e(t.status||'Status not supplied')}</small></div></li>`).join('')}</ul></div>`;
+ }).join('')}</section>`;}).join('')||'<p class="empty">No '+(activeOnly?'active ':'')+'Todoist tasks in the published source snapshot.</p>';
+}
+function agenda(compact=false){
+ const c=data.overview.calendar;if(!c)return '<p class="empty">No calendar shared.</p>';
+ const params=new URLSearchParams({src:c.id,ctz:c.timezone,mode:'AGENDA',showTitle:'0',showPrint:'0',showCalendars:'0',showTabs:'0'});
+ return `<small class="source-tag">Google Calendar · ${e(c.timezone)}</small><iframe loading="lazy" class="source-agenda ${compact?'compact-agenda':''}" title="Upcoming Google Calendar events" referrerpolicy="no-referrer" src="https://calendar.google.com/calendar/embed?${e(params)}"></iframe><small>Live agenda · visibility follows Google Calendar permissions.</small>${sourceLink('https://calendar.google.com/calendar/embed?'+params,'Open Google Calendar ↗')}`;
+}
 function overview(){
- const o=data.overview,p=data.periods[period],b=p.brief,labels={day:'Daily',week:'Weekly',previous:'Previous week',month:'Monthly'};
- const recs=b.recommendations;
- return `<div class="review-top"><div><span class="eyebrow">Project at a glance</span><h2>${e(o.title)}</h2></div><button id="refresh-overview" class="secondary">Refresh</button></div>
- ${staticSite?`<p class="freshness">Published snapshot · ${e(data.today)}. Source connections and new research appear after a reviewed update is published.</p>`:''}<section class="project-introduction" aria-label="Project context"><p>${e(o.summary)}</p>${o.focus.length?`<div class="current-focus"><span class="eyebrow">Current focus</span><p>${e(o.focus[0])}</p></div>`:''}</section>
- <div class="period-tabs" role="group" aria-label="Recap period">${Object.entries(labels).map(([k,v])=>`<button data-period="${k}" aria-pressed="${period===k}">${v}</button>`).join('')}</div>
- <details class="review-tools"><summary>Choose a date or save this recap</summary><div class="review-date"><label>Review date<input id="review-date" type="date" ${data.static_range?`min="${e(data.static_range.start)}" max="${e(data.static_range.finish)}"`:""} value="${e(data.selected_date)}"></label><button id="return-today" class="secondary">${staticSite?"Latest snapshot":"Today"}</button><button id="save-recap" class="secondary">Save recap ↓</button></div></details>
- <p class="period-range">${e(p.start)}${p.finish===p.start?'':' → '+e(p.finish)}</p>
- <div class="freshness ${e(b.freshness.state)}">${e(b.freshness.message)}${b.freshness.state==='stale'?' · Refresh the source before relying on current task status.':''}</div>
- <section class="quick-recap"><h3>Where things stand</h3><p>${e(b.lines[0])}</p>${b.lines.slice(1).map(recapLine).join('')}</section>
- <section class="reading-section"><div class="section-heading"><h3>What needs attention</h3><small>Reported blockers and work to review</small></div>${taskList(b.attention)||'<p class="empty">No attention items in the published record for this review.</p>'}${b.attention_total>3?`<details><summary>${b.attention_total-3} more attention items</summary>${taskList(b.all_attention.slice(3))}</details>`:''}</section>
- <section class="reading-section"><div class="section-heading"><h3>What changed</h3><small>${p.completed.length} completed · ${p.updates.length} updates</small></div>${b.findings.slice(0,2).map(finding).join('')||'<p class="empty">No research results published for this period.</p>'}${b.findings.length>2?`<details><summary>${b.findings.length-2} more research updates</summary>${b.findings.slice(2).map(finding).join('')}</details>`:''}<details><summary>Completed work · ${p.completed.length}</summary>${taskList(p.completed,true)||'<p>No task completions published.</p>'}</details></section>
- ${recs.length?`<section class="reading-section"><h3>Worth reviewing</h3><article class="reading-row"><p>${e(recs[0].text)}</p><small>Why: ${e(recs[0].basis)}</small></article>${recs.length>1?`<details><summary>${recs.length-1} more suggestions</summary>${recs.slice(1).map(r=>`<p>${e(r.text)}<br><small>${e(r.basis)}</small></p>`).join('')}</details>`:''}</section>`:''}
- ${(o.source_notes||[]).length?`<section class="reading-section"><h3>From the lab notes</h3><p>Source notes and planned work · open Notes & tasks for all shared entries.</p>${o.source_notes.slice(0,2).map(n=>`<article class="finding"><small>${e(n.source)} · Edited ${e(n.updated_at||'date unknown')}</small><h3>${e(n.title)}</h3>${recapLine(n.text)}</article>`).join('')}</section>`:''}
- <details class="supporting-records"><summary>Supporting records & upcoming work</summary>
- ${b.upcoming.length?`<h3>Next seven days</h3>${b.upcoming.map(t=>`<div class="outlook-row"><time>${e(t.outlook_date)}</time><span>${e(t.title)}<small>${ganttLink(t.task_id)}</small></span></div>`).join('')}`:''}
- ${p.overdue.length?`<details><summary>Current carryover · ${p.overdue.length}</summary>${taskList(p.overdue)}</details>`:''}
- ${b.undated.length?`<details><summary>Without a date · ${b.undated.length}</summary>${taskList(b.undated)}</details>`:''}
- ${period!=='day'&&b.groups.length?`<section class="reading-section"><h3>By research task</h3>${b.groups.map(g=>`<details><summary>${ganttLink(g.task_id)} · ${g.completed.length} completed · ${g.updates.length} updates</summary>${g.updates.map(finding).join('')}${taskList(g.completed,true)}</details>`).join('')}</section>`:''}<details class="daily-records"><summary>Day-by-day record</summary>${p.days.map(d=>`<details class="digest-day"><summary><b>${new Date(d.date+'T12:00').toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'})}</b><span>${d.completed.length} done · ${d.planned.length} open · ${d.updates.length} updates</span></summary>${taskList(d.completed,true)}${taskList(d.planned)}${d.updates.map(finding).join('')}${!d.completed.length&&!d.planned.length&&!d.updates.length?'<p class="empty">No published entries.</p>':''}</details>`).join('')}</details>
- </details>
- ${p.quality.length?`<details class="source-notice"><summary>Record quality · ${p.quality.length} checks to review</summary>${p.quality.map(q=>`<p>${e(q)}</p>`).join('')}</details>`:''}<details class="source-status"><summary>Sources & coverage</summary><ul>${sourceConnectionRows()}</ul><p>${e(o.coverage)}</p><p>Published: ${e(o.updated||'Not yet dated')}. Counts cover shared records only. Unfinished status is the latest snapshot, not historical status. Task completion does not prove scientific acceptance.</p><p>Recommendations combine published suggestions and rule-based review prompts. This website does not call an AI model.</p></details>`;
+ const r=data.roadmap;
+ return `<div class="overview-heading"><div><span class="eyebrow">Collaborator overview</span><h2>${e(data.overview.title)}</h2></div><button class="secondary" id="refresh-overview">Refresh</button></div><div class="freshness"><span>Published ${e(data.overview.updated||'date unavailable')}</span><ul>${sourceConnectionRows()}</ul></div>
+ <section class="source-panel roadmap-preview"><div class="section-heading"><div><span class="source-tag">Original Gantt workbook</span><h2>Project roadmap</h2></div>${jump('gantt','Full Gantt')}</div><div class="preview-controls" hidden><select id="roadmap-stream"><option value=""></option></select><select id="roadmap-depth"><option value="bands"></option></select><select id="roadmap-scale"><option value="fit"></option></select><label><select id="roadmap-month"><option value=""></option></select></label></div><div id="roadmap-grid"></div><small>Solid: expected work · pale: pessimistic extension · ◇ milestone · ○ decision · △ arrival</small><details><summary>Workbook source details</summary><p>${e(r.warning)}</p></details></section>
+ <div class="source-columns"><section class="source-panel"><div class="section-heading"><h2>Upcoming calendar</h2>${jump('calendar','Calendar')}</div>${agenda(true)}</section><section class="source-panel"><div class="section-heading"><h2>Recent research updates</h2>${jump('notes','All notes')}</div>${notesFeed(3)}</section></div>
+ <section class="source-panel todoist-panel"><div class="section-heading"><div><span class="source-tag">Todoist · source order</span><h2>Project tasks</h2></div>${jump('tasks','All tasks')}</div>${todoistTree(true)}</section>`;
 }
 function sourceConnectionRows(){
  const labels={not_connected:'Not connected',pending_credentials:'Credentials pending',unverified:'Private import not yet verified',verified:'Connected',partial:'Connected · incomplete import',unavailable:'Source unavailable'};
- return Object.entries({calendar:'Google Calendar',notion:'Notion',todoist:'Todoist'}).map(([key,name])=>{const c=data.overview.source_connections?.[key]||{status:'not_connected'};return `<li><b>${name}:</b> ${e(labels[c.status]||labels.unverified)}${c.checked_at?' · Last check '+e(c.checked_at):''}</li>`;}).join('');
+ return Object.entries({calendar:'Google Calendar',notion:'Notion',todoist:'Todoist'}).map(([key,name])=>{const c=data.overview.source_connections?.[key]||{status:'not_connected'};return `<li><b>${name}:</b> ${key==='calendar'&&data.overview.calendar?'Live agenda · Google access':e(labels[c.status]||labels.unverified)}${c.checked_at?' · Last check '+e(c.checked_at):''}</li>`;}).join('');
 }
-function calendarView(){
- const calendar=data.overview.calendar;
- if(!calendar)return '<section class="intro"><div><h2>Calendar</h2><p>No calendar has been shared for viewing yet.</p></div></section>';
- const query=new URLSearchParams({src:calendar.id,ctz:calendar.timezone,mode:'AGENDA',showTitle:'0',showPrint:'0',showCalendars:'0'});
- return `<section class="intro"><div><span class="eyebrow">Schedule</span><h2>Google Calendar</h2><p>View upcoming commitments in Google’s calendar. Scheduled events are plans, not evidence of completed research.</p></div></section><section class="reading-section"><p>Visibility follows your Google account’s existing calendar access. If the calendar is blank or asks you to sign in, open it directly in Google.</p><div class="actions"><button id="load-calendar">Show calendar here</button><a href="https://calendar.google.com/calendar/embed?${e(query.toString())}" target="_blank" rel="noopener noreferrer">Open Google Calendar ↗</a></div><p class="muted">Timezone: ${e(calendar.timezone)}. The calendar loads from Google only when you choose to show it.</p><div id="calendar-container"></div></section><section class="reading-section"><h3>Sources for the research recap</h3><p>The calendar view is separate from briefing imports. These are the last published connection checks; a working calendar embed does not verify the private importer.</p><ul>${sourceConnectionRows()}</ul><p>After connection and testing, reviewed source information can be included in the published overview. Your API credentials belong in the private application, never on this site.</p></section>`;
-}
-function bindCalendar(){
- const button=$('#load-calendar');if(!button)return;
- button.onclick=()=>{const c=data.overview.calendar,params=new URLSearchParams({src:c.id,ctz:c.timezone,mode:'AGENDA',showTitle:'0',showPrint:'0',showCalendars:'0'}),frame=document.createElement('iframe');frame.title='SABRE Google Calendar';frame.className='google-calendar';frame.referrerPolicy='no-referrer';frame.src='https://calendar.google.com/calendar/embed?'+params;$('#calendar-container').replaceChildren(frame);button.hidden=true;};
-}
+function calendarView(){return `<section class="source-panel"><h2>Google Calendar</h2>${agenda()}</section>`;}
 function resources(){
  const groups=[['reading','Background reading','Papers and explanations that provide context for the research.'],['reference','Reference files','Shared protocols, results, and supporting project material.'],['tool','Useful tools','Links to tools collaborators can use while working on the project.']];
  return `<section class="intro resource-intro"><div><span class="eyebrow">Get up to speed</span><h2>Files, reading & tools</h2><p>Use the Overview for recent work and the Gantt for the research schedule. Explore the supporting material below for more context.</p></div></section>${groups.map(([key,title,description])=>{
@@ -61,16 +58,14 @@ function resources(){
  return items.length?`<section class="resource-group" aria-labelledby="resources-${key}"><h2 id="resources-${key}">${title}</h2><p class="resource-context">${description}</p>${items.map(r=>`<article class="resource-item"><small>${r.url?'External link · Opens in a new tab':'File download'}</small><h3><a href="${r.url?e(r.url):e(r.download_url||'/files/'+encodeURIComponent(r.id))}" ${r.url?'target="_blank" rel="noopener noreferrer"':(staticSite?'download':'')}>${e(r.title)} ${r.url?'↗':'↓'}</a></h3>${r.description?`<p>${e(r.description)}</p>`:''}</article>`).join('')}</section>`:'';
  }).join('')||'<p class="empty">No resources have been shared yet.</p>'}`;
 }
-function bindRecap(){
- document.querySelectorAll('[data-period]').forEach(b=>b.onclick=()=>{period=b.dataset.period;render();});
- document.querySelectorAll('[data-open-task]').forEach(b=>b.onclick=()=>{view='gantt';render();showRoadmapEvidence(b.dataset.openTask);});
- if(view!=='overview')return;
- $('#review-date').onchange=ev=>loadOverview(ev.target.value);
- $('#return-today').onclick=()=>{period='day';loadOverview();};
- $('#refresh-overview').onclick=()=>loadOverview(data.selected_date);
- $('#save-recap').onclick=()=>{const blob=new Blob([data.periods[period].markdown],{type:'text/markdown'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='SABRE-'+period+'-'+data.selected_date+'.md';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
+function render(){
+ document.querySelectorAll('[data-view]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.view===view));
+ $('#content').innerHTML=view==='gantt'?renderGantt():view==='resources'?resources():view==='notes'?`<section class="source-panel"><h2>Research notes</h2>${notesFeed()}</section>`:view==='tasks'?`<section class="source-panel"><span class="source-tag">Todoist</span><h2>Tasks by project and section</h2>${todoistTree()}</section>`:view==='calendar'?calendarView():overview();
+ document.querySelectorAll('[data-jump]').forEach(b=>b.onclick=()=>{view=b.dataset.jump;render();window.scrollTo(0,0);});
+ if(view==='gantt')restoreGanttSettings();
+ if(view==='overview'){drawCompactRoadmap();$('#refresh-overview').onclick=()=>loadOverview();}
 }
-function render(){document.querySelectorAll('[data-view]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.view===view));$('#content').innerHTML=view==='gantt'?renderGantt():view==='resources'?resources():view==='sources'?sourceRecords():view==='calendar'?calendarView():overview();bindRecap();if(view==='calendar')bindCalendar();if(view==='gantt')restoreGanttSettings();}
+
 document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>{if(!data)return;view=b.dataset.view;render();});
 async function loadOverview(date=''){
  const sequence=++requestSequence;$('#message').textContent='Refreshing published overview…';
@@ -110,6 +105,7 @@ function drawRoadmap(){
  document.querySelectorAll('[data-roadmap-id]').forEach(b=>b.onclick=()=>showRoadmapEvidence(b.dataset.roadmapId));
 }
 function showRoadmapEvidence(id){
+ if(view!=='gantt'){view='gantt';render();}
  const r=data.roadmap,row=r.rows.find(t=>t.id===id),ids=[id,...r.rows.filter(t=>t.parent===id).map(t=>t.id)],tasks=r.tasks.filter(t=>ids.includes(t.ID)),notes=roadmapNotes(ids);
  const dateText=v=>v==='#VALUE!'?'Unavailable — source formula error':v||'Not scheduled';
  $('#roadmap-evidence').innerHTML=`<h2>${e(id)} · ${e(row.title)}</h2><p class="muted">Source: Gantt Overview, row ${row.row}. ${e(row.owner)}</p>${tasks.map(t=>`<details ${tasks.length===1?'open':''}><summary>${e(t.ID)} · ${e(t.Task)}</summary><p><b>Expected:</b> ${e(dateText(t['Start (expected)']))} → ${e(dateText(t['Finish (expected)']))}<br><b>Pessimistic:</b> ${e(dateText(t['Start (pessim.)']))} → ${e(dateText(t['Finish (pessim.)']))}</p><p>Predecessors: ${e(t.Predecessors||'None listed')}<br></p></details>`).join('')}<h3>Published research · ${notes.length} published updates</h3>${notes.map(n=>`<article class="reading-row"><small>${e(n.date)} · ${e(n.roadmap_task_id)}</small><p class="evidence">${e(n.cleaned_text??n.text)}</p></article>`).join('')||'<p>No evidence linked yet. This does not mean the work has not happened.</p>'}<p class="muted">Published updates describe reported work; they do not automatically establish completion. Updates outside the displayed weeks remain visible here.</p>`;
@@ -127,11 +123,6 @@ function drawCompactRoadmap(){
  const ids=[x.id,...r.rows.filter(t=>t.parent===x.id).map(t=>t.id)],notes=roadmapNotes(ids);
  return `<button class="compact-row ${x.parent?'compact-child':''}" data-roadmap-id="${e(x.id)}"><span class="compact-title"><b>${e(x.id)} · ${e(x.title)}</b>${notes.length?`<small>${notes.length} updates</small>`:''}</span><span class="compact-track" style="grid-template-columns:repeat(${indices.length},minmax(0,1fr))">${indices.map(i=>{const c=x.cells[i],dot=notes.some(n=>n.date>=r.weeks[i].start&&n.date<=r.weeks[i].finish);return `<span class="${r.weeks[i].start<=data.today&&data.today<=r.weeks[i].finish?'current-week':''}" style="${c.fill?'background:'+c.fill:''}" title="${e(r.weeks[i].start+' – '+r.weeks[i].finish)}">${e({'<>':'◇','o':'○','^':'△'}[c.mark]||c.mark)}${dot?'<i>●</i>':''}</span>`;}).join('')}</span></button>`;
  }).join('')}</div>`;
+ if(view==='overview'){const root=$('#roadmap-grid .compact-gantt');let group;[...root.children].forEach(el=>{if(el.matches('.compact-section')){group=document.createElement('details');group.className='roadmap-group';const heading=document.createElement('summary');heading.textContent=el.textContent;group.append(heading);el.replaceWith(group);}else if(group){group.append(el);}});const groups=root.querySelectorAll('.roadmap-group');groups.forEach((g,i)=>{g.open=i===1;const count=g.querySelectorAll('.compact-row').length;g.querySelector('summary').append(' · '+count+' rows');});}
  document.querySelectorAll('[data-roadmap-id]').forEach(b=>b.onclick=()=>showRoadmapEvidence(b.dataset.roadmapId));
-}
-
-function sourceRecords(){
- const o=data.overview,notes=o.source_notes||[],tasks=o.tasks||[];
- const open=tasks.filter(t=>['open','blocked','in_progress'].includes(t.status)),done=tasks.filter(t=>t.status==='completed');
- return `<section class="intro"><div><span class="eyebrow">Research sources</span><h2>Notes & tasks</h2><p>Shared source records, organized for a quick catch-up. Task completion and note edits do not automatically establish experimental results.</p></div></section><section class="reading-section"><h3>Connection checks</h3><ul>${sourceConnectionRows()}</ul><p>${e(o.coverage)}</p></section><section class="reading-section"><h3>Action list · ${open.length} unfinished</h3>${taskList(open)||'<p>No unfinished tasks have been shared.</p>'}<details><summary>Completed tasks · ${done.length}</summary>${taskList(done,true)||'<p>No completed tasks have been shared.</p>'}</details></section><section class="reading-section"><h3>Research notes · ${notes.length}</h3><p>Dates below indicate source edits, not when experiments occurred.</p>${notes.map(n=>`<article class="finding"><small>${e(n.source)} · Edited ${e(n.updated_at||'date unknown')}</small><h3>${e(n.title)}</h3>${recapLine(n.text)}</article>`).join('')||'<p>No research notes have been shared.</p>'}</section>`;
 }
