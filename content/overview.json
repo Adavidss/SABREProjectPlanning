@@ -2,9 +2,9 @@
   "title": "SABRE polarizer",
   "summary": "Research overview for collaborators: V1 experiments, the V2 platform, instrumentation, and automated separation. Explore the original roadmap to see how the work fits together.",
   "updated": "2026-09-23",
-  "source_as_of": "",
-  "source_status": "unknown",
-  "coverage": "No task or research recap has been published yet. Counts below cover shared records only.",
+  "source_as_of": "2026-09-23",
+  "source_status": "ok",
+  "coverage": "Five substantive notes selected from the September 23 Notion source refresh. These describe goals and documentation work, not completed experiments. Todoist connected to SABRE Project Todos and returned no tasks in this refresh. Note edit dates are not experiment dates.",
   "calendar": {
     "id": "adavidss@umd.edu",
     "timezone": "America/New_York"
@@ -15,16 +15,55 @@
       "checked_at": null
     },
     "notion": {
-      "status": "pending_credentials",
-      "checked_at": null
+      "status": "verified",
+      "checked_at": "2026-09-23"
     },
     "todoist": {
-      "status": "pending_credentials",
-      "checked_at": null
+      "status": "verified",
+      "checked_at": "2026-09-23"
     }
   },
-  "focus": [],
+  "focus": [
+    "Planned work from the September 23 Notion notes: instrument documentation, setup fixes, and QuSpin polarization monitoring."
+  ],
   "tasks": [],
+  "source_notes": [
+    {
+      "id": "note:3e4efab87d948054b2adecbaf6f5dd29",
+      "title": "Planned: project-management tools",
+      "text": "→ Setup project management help tools",
+      "updated_at": "2026-09-23",
+      "source": "Notion"
+    },
+    {
+      "id": "note:3e4efab87d948023bb97cb2b28cd8195",
+      "title": "Planned: instrument electronics overview",
+      "text": "→ Work on a document overviewing the electronics and more in-depth construction of the SABRE instrument. (For Eric Bennet)",
+      "updated_at": "2026-09-23",
+      "source": "Notion"
+    },
+    {
+      "id": "note:3e4efab87d9480028418c5cb3beac1af",
+      "title": "Planned: solenoid, shield and code fixes",
+      "text": "→ Implement fixes to the SABRE setup (New solenoid, shield spacers, code fixes)",
+      "updated_at": "2026-09-23",
+      "source": "Notion"
+    },
+    {
+      "id": "note:3e4efab87d948044bcb7dcdb2cf58506",
+      "title": "Planned: QuSpin polarization monitoring",
+      "text": "→ Run hyperpolarization experiments (Looking for QuSpin polarization montioring capability)",
+      "updated_at": "2026-09-23",
+      "source": "Notion"
+    },
+    {
+      "id": "note:3e4efab87d948048bd6ecf75a42238eb",
+      "title": "Documentation: subsystem construction and connections",
+      "text": "Outline the construction, parts, etc… of each subsystem and how they connect. (Document should be in-depth enough for Eric to overview)",
+      "updated_at": "2026-09-23",
+      "source": "Notion"
+    }
+  ],
   "updates": [],
   "recommendations": [],
   "resources": []
