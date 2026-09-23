@@ -39,6 +39,20 @@ function overview(){
  </details>
  ${p.quality.length?`<details class="source-notice"><summary>Record quality · ${p.quality.length} checks to review</summary>${p.quality.map(q=>`<p>${e(q)}</p>`).join('')}</details>`:''}<details class="source-status"><summary>Sources & coverage</summary><p>${e(o.coverage)}</p><p>Published: ${e(o.updated||'Not yet dated')}. Counts cover shared records only. Unfinished status is the latest snapshot, not historical status. Task completion does not prove scientific acceptance.</p><p>Recommendations are rule-based review prompts. They do not call an AI model.</p></details>`;
 }
+function sourceConnectionRows(){
+ const labels={not_connected:'Not connected',pending_credentials:'Credentials pending',unverified:'Private import not yet verified',verified:'Private import verified',unavailable:'Source unavailable'};
+ return Object.entries({calendar:'Google Calendar',notion:'Notion',todoist:'Todoist'}).map(([key,name])=>{const c=data.overview.source_connections?.[key]||{status:'not_connected'};return `<li><b>${name}:</b> ${e(labels[c.status]||labels.unverified)}${c.checked_at?' · Last check '+e(c.checked_at):''}</li>`;}).join('');
+}
+function calendarView(){
+ const calendar=data.overview.calendar;
+ if(!calendar)return '<section class="intro"><div><h2>Calendar</h2><p>No calendar has been shared for viewing yet.</p></div></section>';
+ const query=new URLSearchParams({src:calendar.id,ctz:calendar.timezone,mode:'AGENDA',showTitle:'0',showPrint:'0',showCalendars:'0'});
+ return `<section class="intro"><div><span class="eyebrow">Schedule</span><h2>Google Calendar</h2><p>View upcoming commitments in Google’s calendar. Scheduled events are plans, not evidence of completed research.</p></div></section><section class="reading-section"><p>Visibility follows your Google account’s existing calendar access. If the calendar is blank or asks you to sign in, open it directly in Google.</p><div class="actions"><button id="load-calendar">Show calendar here</button><a href="https://calendar.google.com/calendar/embed?${e(query.toString())}" target="_blank" rel="noopener noreferrer">Open Google Calendar ↗</a></div><p class="muted">Timezone: ${e(calendar.timezone)}. The calendar loads from Google only when you choose to show it.</p><div id="calendar-container"></div></section><section class="reading-section"><h3>Sources for the research recap</h3><p>The calendar view is separate from briefing imports. These are the last published connection checks; a working calendar embed does not verify the private importer.</p><ul>${sourceConnectionRows()}</ul><p>After connection and testing, reviewed source information can be included in the published overview. Your API credentials belong in the private application, never on this site.</p></section>`;
+}
+function bindCalendar(){
+ const button=$('#load-calendar');if(!button)return;
+ button.onclick=()=>{const c=data.overview.calendar,params=new URLSearchParams({src:c.id,ctz:c.timezone,mode:'AGENDA',showTitle:'0',showPrint:'0',showCalendars:'0'}),frame=document.createElement('iframe');frame.title='SABRE Google Calendar';frame.className='google-calendar';frame.referrerPolicy='no-referrer';frame.src='https://calendar.google.com/calendar/embed?'+params;$('#calendar-container').replaceChildren(frame);button.hidden=true;};
+}
 function resources(){
  const groups=[['reading','Background reading','Papers and explanations that provide context for the research.'],['reference','Reference files','Shared protocols, results, and supporting project material.'],['tool','Useful tools','Links to tools collaborators can use while working on the project.']];
  return `<section class="intro resource-intro"><div><span class="eyebrow">Get up to speed</span><h2>Files, reading & tools</h2><p>Use the Overview for recent work and the Gantt for the research schedule. Explore the supporting material below for more context.</p></div></section>${groups.map(([key,title,description])=>{
@@ -55,7 +69,7 @@ function bindRecap(){
  $('#refresh-overview').onclick=()=>loadOverview(data.selected_date);
  $('#save-recap').onclick=()=>{const blob=new Blob([data.periods[period].markdown],{type:'text/markdown'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='SABRE-'+period+'-'+data.selected_date+'.md';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
 }
-function render(){document.querySelectorAll('[data-view]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.view===view));$('#content').innerHTML=view==='gantt'?renderGantt():view==='resources'?resources():overview();bindRecap();if(view==='gantt')restoreGanttSettings();}
+function render(){document.querySelectorAll('[data-view]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.view===view));$('#content').innerHTML=view==='gantt'?renderGantt():view==='resources'?resources():view==='calendar'?calendarView():overview();bindRecap();if(view==='calendar')bindCalendar();if(view==='gantt')restoreGanttSettings();}
 document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>{if(!data)return;view=b.dataset.view;render();});
 async function loadOverview(date=''){
  const sequence=++requestSequence;$('#message').textContent='Refreshing published overview…';
