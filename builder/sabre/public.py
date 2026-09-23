@@ -9,37 +9,28 @@ from .library import safe_url
 
 def public_content(directory):
     content=json.loads((Path(directory)/'overview.json').read_text())
-    # Copy known fields only: adding a field to a private model cannot expose it.
+    # Publication v2 fails closed. Drafts and raw provider records never reach exports.
+    def approved(row):
+        return row.get('visibility')=='collaborators' and bool(row.get('approved_at'))
+    def rows(name, fields):
+        return [{k:str(r.get(k,'') or '') for k in fields} for r in content.get(name,[]) if approved(r)]
+    stamp=('visibility','approved_at')
     result={'title':str(content.get('title','SABRE polarizer')),
-            'summary':str(content.get('summary','')),
-            'updated':content.get('updated'),
-            'source_as_of':content.get('source_as_of'),
-            'source_status':str(content.get('source_status','unknown')),
-            'coverage':str(content.get('coverage','No source recap has been published yet.')),
-            'tasks':[{k:str(t.get(k,'') or '') for k in ('id','title','status','due_date','planned_date','completed_date','task_id','source','project_id','project_name','section_id','section_name','section_order','task_order','parent_id','url')} for t in content.get('tasks',[])],
-            'recommendations':[{k:str(t.get(k,'') or '') for k in ('text','basis')} for t in content.get('recommendations',[])],
-            'source_notes':[{k:str(n.get(k,'') or '') for k in ('id','title','text','updated_at','source','url')} for n in content.get('source_notes',[])],
-            'focus':[str(x) for x in content.get('focus',[])],
-            'updates':[{k:str(u.get(k,'') or '') for k in ('date','task_id','title','summary','result','next_step','evidence_ref','kind')} for u in content.get('updates',[])],
-            'resources':[{k:str(r.get(k,'')) for k in ('id','title','description','category','url')} for r in content.get('resources',[]) if safe_url(r.get('url')) or (not r.get('url') and shared_file(directory,r.get('id')) is not None)]}
-    for name in ('tasks','source_notes'):
-        for item, original in zip(result[name],content.get(name,[])):
+            'summary':'','focus':[],'recommendations':[],'source_notes':[],
+            'updated':content.get('updated'),'source_as_of':content.get('source_as_of'),
+            'source_status':str(content.get('source_status','unknown')),'coverage':'Approved coordination metadata only.',
+            'tasks':rows('tasks',('id','title','status','due_date','planned_date','completed_date','task_id','source','project_id','project_name','section_id','section_name','section_order','task_order','parent_id','url')+stamp),
+            'updates':rows('updates',('id','date','task_id','title','summary','result','next_step','evidence_ref','kind','origin','source','url')+stamp),
+            'events':rows('events',('id','title','start','end','timezone','location','source','synced_at')+stamp),
+            'resources':rows('resources',('id','title','description','category','url')+stamp)}
+    for name in ('tasks','updates','resources'):
+        for item in result[name]:
             if not safe_url(item.get('url')):item['url']=''
-            if name=='source_notes':
-                bullets=original.get('summary_bullets',[])
-                item['summary_bullets']=[b for b in bullets[:3] if isinstance(b,str) and len(b)<=500] if isinstance(bullets,list) else []
-    calendar=content.get('calendar',{})
-    if isinstance(calendar,dict):
-        identifier=calendar.get('id','')
-        if isinstance(identifier,str) and re.fullmatch(r'[A-Za-z0-9_.+@-]{1,254}',identifier):
-            from zoneinfo import ZoneInfo,ZoneInfoNotFoundError
-            zone=calendar.get('timezone','America/New_York')
-            try:ZoneInfo(zone)
-            except (ZoneInfoNotFoundError,ValueError,TypeError):zone='America/New_York'
-            result['calendar']={'id':identifier,'timezone':zone}
+    result['resources']=[r for r in result['resources'] if r['url'] or shared_file(directory,r['id']) is not None]
+    # Do not export calendar IDs, conference links, attendee details, or raw embeds.
     connections=content.get('source_connections',{})
     result['source_connections']={}
-    for name in ('calendar','notion','todoist'):
+    for name in ('calendar','todoist'):
         value=connections.get(name,{}) if isinstance(connections,dict) else {}
         if not isinstance(value,dict):value={}
         status=value.get('status','not_connected')
@@ -56,7 +47,7 @@ def shared_file(directory,identifier):
     if not isinstance(identifier,str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,80}',identifier):return None
     root=Path(directory).resolve();manifest=json.loads((root/'overview.json').read_text())
     entry=next((r for r in manifest.get('resources',[]) if r.get('id')==identifier),None)
-    if not entry:return None
+    if not entry or entry.get('visibility')!='collaborators' or not entry.get('approved_at'):return None
     name=entry.get('file','')
     if not isinstance(name,str) or Path(name).name!=name:return None
     base=(root/'files').resolve();p=(base/name).resolve()
@@ -68,7 +59,7 @@ def public_roadmap():
     r=source_roadmap()
     return {'weeks':r['weeks'],'warning':r['warning'],
             'rows':[{k:x[k] for k in ('section','id','title','owner','row','parent','start','finish','cells') if k in x} for x in r['rows']],
-            'tasks':[{k:t.get(k) for k in ('ID','Task','Start (expected)','Finish (expected)','Start (pessim.)','Finish (pessim.)','Predecessors')} for t in r['tasks']]}
+            'tasks':[{k:t.get(k) for k in ('ID','Task','Start (expected)','Finish (expected)','Start (pessim.)','Finish (pessim.)','Predecessors','Status','Completed')} for t in r['tasks']]}
 
 
 def period_summaries(content, today, current_day=None):
