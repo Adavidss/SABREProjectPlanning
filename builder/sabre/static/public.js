@@ -1,12 +1,8 @@
 'use strict';
 const staticSite=document.body.dataset.static==='true';
-let data,view='overview',period='day',requestSequence=0,ganttSettings={};
+const views=['overview','gantt','calendar','tasks','resources'];
+let data,view=views.includes(location.hash.slice(1))?location.hash.slice(1):'overview',requestSequence=0,ganttSettings={},taskQuery='',resourceQuery='',taskScope='active';
 const $=s=>document.querySelector(s),e=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-function recapLine(text){
- if(text.length<=320)return `<p>${e(text)}</p>`;
- const boundary=text.lastIndexOf(' ',300),preview=text.slice(0,boundary>100?boundary:300);
- return `<details class="recap-expand"><summary>${e(preview)}… <span>Read full statement</span></summary><p class="evidence">${e(text)}</p></details>`;
-}
 function restoreGanttSettings(){
  for(const id of ['roadmap-stream','roadmap-depth','roadmap-scale','roadmap-month']){
   const control=$('#'+id),value=ganttSettings[id];
@@ -19,20 +15,17 @@ function sourceLink(url,label='Open source ↗'){
  try{const u=new URL(url);return u.protocol==='https:'&&!u.username&&!u.password?`<a href="${e(u.href)}" target="_blank" rel="noopener noreferrer">${e(label)}</a>`:'';}catch{return '';}
 }
 function jump(target,label){return `<button class="inline-link" data-jump="${target}">${label} ↗</button>`;}
-function notesFeed(limit=Infinity){
- const updates=[...(data.overview.updates||[])].sort((a,b)=>(b.date||'').localeCompare(a.date||''));
- return updates.slice(0,limit).map(n=>`<article class="source-note"><small class="source-tag">Project Update · ${e(n.date)} · Approved ${e((n.approved_at||'').slice(0,10))}</small><h3>${e(n.title)}</h3>${recapLine(n.summary||n.result||'')}${n.origin==='ai_summary'?'<small>AI summary of approved source material · reviewed before publication</small>':''}${n.source?`<small>Source: ${e(n.source)}</small>`:''}${sourceLink(n.url)}</article>`).join('')||'<p class="empty">No approved project updates yet.</p>';
-}
-function todoistTree(activeOnly=false){
+function todoistTree(activeOnly=false,query=''){
  const tasks=(data.overview.tasks||[]).filter(t=>t.source==='Todoist'||t.id?.startsWith('todoist:')).filter(t=>!activeOnly||!['completed','cancelled'].includes(t.status));
- const projects=new Map();for(const t of tasks){const id=t.project_id||'';if(!projects.has(id))projects.set(id,[]);projects.get(id).push(t);}
+ const needle=query.trim().toLowerCase();const matches=t=>[t.title,t.project_name,t.section_name].some(v=>(v||'').toLowerCase().includes(needle));const keep=new Set();if(needle)for(const task of tasks.filter(matches)){let t=task;while(t&&!keep.has(t)){keep.add(t);t=t.parent_id?tasks.find(p=>p.id==='todoist:'+t.parent_id||p.id===t.parent_id):null;}}const selected=needle?tasks.filter(t=>keep.has(t)):tasks;
+ const projects=new Map();for(const t of selected){const id=t.project_id||'';if(!projects.has(id))projects.set(id,[]);projects.get(id).push(t);}
  return [...projects].map(([id,rows])=>{const sections=new Map();for(const t of rows){const key=t.section_id||'';if(!sections.has(key))sections.set(key,[]);sections.get(key).push(t);}
  return `<section class="todoist-project"><h3>${e(rows[0].project_name|| (id?'Todoist project · '+id:'Todoist · project not supplied'))}</h3>${[...sections].sort((a,b)=>Number(a[1][0].section_order||0)-Number(b[1][0].section_order||0)).map(([sid,items])=>{
  items.sort((a,b)=>Number(a.task_order||0)-Number(b.task_order||0));
  const ordered=[],visited=new Set();const visit=t=>{if(visited.has(t))return;visited.add(t);ordered.push(t);items.filter(x=>x.parent_id&&(t.id==='todoist:'+x.parent_id||t.id===x.parent_id)).forEach(visit);};items.filter(t=>!t.parent_id||!items.some(x=>x.id==='todoist:'+t.parent_id||x.id===t.parent_id)).forEach(visit);items.forEach(visit);
  const depth=t=>{let d=0,p=t.parent_id,seen=new Set([t.id]);while(p&&d<5){const parent=items.find(x=>x.id==='todoist:'+p||x.id===p);if(!parent||seen.has(parent.id))break;seen.add(parent.id);d++;p=parent.parent_id;}return d;};
  return `<div class="todoist-section">${sid||items[0].section_name?`<h4>${e(items[0].section_name||'Section · '+sid)}</h4>`:''}<ul>${ordered.map(t=>`<li style="--depth:${depth(t)}"><span aria-hidden="true">${t.status==='completed'?'✓':'○'}</span><div>${sourceLink(t.url,t.title)||e(t.title)}<small>${t.due_date?'Due '+e(t.due_date)+' · ':''}${e(t.status||'Status not supplied')}</small></div></li>`).join('')}</ul></div>`;
- }).join('')}</section>`;}).join('')||'<p class="empty">No '+(activeOnly?'active ':'')+'Todoist tasks in the published source snapshot.</p>';
+ }).join('')}</section>`;}).join('')||`<p class="empty">${needle?'No tasks match this search.':'No '+(activeOnly?'active ':'')+'tasks shared yet.'}</p>`;
 }
 function agenda(compact=false){
  const events=[...(data.overview.events||[])].sort((a,b)=>a.start.localeCompare(b.start));
@@ -42,35 +35,43 @@ function agenda(compact=false){
  const when=x=>{if(/^\d{4}-\d{2}-\d{2}$/.test(x.start))return x.start+' · All day';try{return new Intl.DateTimeFormat(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit',timeZone:x.timezone||'America/New_York',timeZoneName:'short'}).format(new Date(x.start));}catch{return 'Date unavailable';}};
  return `<small class="source-tag">Google Calendar · ${compact?'Next 14 days':'Approved schedule'}</small>${upcoming.map(x=>`<article class="calendar-event"><time>${e(when(x))}</time><h3>${e(x.title)}</h3>${x.location?`<small>${e(x.location)}</small>`:''}<small>Synced ${e((x.synced_at||'').slice(0,10)||'date unavailable')}</small></article>`).join('')||'<p class="empty">No approved events in this window.</p>'}`;
 }
-function milestoneHistory(){
+function milestoneHistory(compact=false){
  const r=data.roadmap,seen=new Set(),rows=[];
  for(const row of r.rows){if(!row.id||seen.has(row.id))continue;const dates=(row.cells||[]).flatMap((c,i)=>c.mark==='<>'?[r.weeks[i].start]:[]);if(!dates.length)continue;seen.add(row.id);const task=r.tasks.find(t=>t.ID===row.id)||{};rows.push({id:row.id,title:row.title,date:dates[0],completed:task.Status==='completed'||task.Status==='complete',actual:task.Completed||''});}
  const done=rows.filter(x=>x.completed),planned=rows.filter(x=>!x.completed).sort((a,b)=>a.date.localeCompare(b.date));
- const list=xs=>xs.map(x=>`<li><time>${e(x.completed?x.actual||'Date not recorded':x.date)}</time><span>${jump('gantt',e(x.id)+' · '+e(x.title))}${!x.completed&&x.date<data.today?'<small>Past planned date · completion not recorded</small>':''}</span></li>`).join('');
+ const upcoming=planned.filter(x=>x.date>=data.today);
+ const list=xs=>xs.map(x=>`<li><time>${e(x.completed?x.actual||'Date not recorded':x.date)}</time><span><button class="inline-link" data-open-roadmap="${e(x.id)}">${e(x.id)} · ${e(x.title)} ↗</button>${!x.completed&&x.date<data.today?'<small>Past planned date · completion not recorded</small>':''}</span></li>`).join('');
+ if(compact)return `<div class="milestone-preview"><div class="section-heading"><h3>Next roadmap milestones</h3>${jump('gantt','Explore Gantt')}</div><ul class="milestone-list">${list(upcoming.slice(0,3))||'<li>No future milestones in the source schedule.</li>'}</ul><small>Planned dates from the workbook.</small></div>`;
  return `<section class="source-panel"><span class="source-tag">Gantt · original milestone markers</span><h2>Milestones</h2><details><summary>Explicitly completed · ${done.length}</summary><ul class="milestone-list">${list(done)||'<li>No completion recorded in the roadmap.</li>'}</ul></details><details open><summary>Scheduled milestones · ${planned.length}</summary><ul class="milestone-list">${list(planned)}</ul></details></section>`;
 }
 let visitChanges=null,visitBaseline;
 function visitFingerprint(snapshot){
  const hash=x=>{let n=2166136261;for(const c of JSON.stringify(x)){n=Math.imul(n^c.charCodeAt(0),16777619);}return String(n>>>0);};
- return {at:new Date().toISOString(),updates:Object.fromEntries(snapshot.overview.updates.map(x=>[x.id||hash(x),hash(x)])),tasks:Object.fromEntries(snapshot.overview.tasks.map(x=>[x.id,x.status])),events:Object.fromEntries((snapshot.overview.events||[]).map(x=>[x.id,hash(x)])),roadmap:Object.fromEntries(snapshot.roadmap.rows.filter(x=>x.id).map(x=>[x.id,hash(x)]))};
+ return {at:new Date().toISOString(),tasks:Object.fromEntries(snapshot.overview.tasks.map(x=>[x.id,x.status])),events:Object.fromEntries((snapshot.overview.events||[]).map(x=>[x.id,hash(x)])),roadmap:Object.fromEntries(snapshot.roadmap.rows.filter(x=>x.id).map(x=>[x.id,hash(x)]))};
 }
 function compareVisits(before,after){
  const added=key=>Object.keys(after[key]).filter(id=>!(id in before[key])).length;
- return {updates:added('updates'),roadmap:Object.keys(after.roadmap).filter(id=>id in before.roadmap&&before.roadmap[id]!==after.roadmap[id]).length,completed:Object.keys(after.tasks).filter(id=>after.tasks[id]==='completed'&&id in before.tasks&&before.tasks[id]!=='completed').length,events:added('events')};
+ return {roadmap:Object.keys(after.roadmap).filter(id=>id in before.roadmap&&before.roadmap[id]!==after.roadmap[id]).length,completed:Object.keys(after.tasks).filter(id=>after.tasks[id]==='completed'&&id in before.tasks&&before.tasks[id]!=='completed').length,events:added('events')};
 }
 function rememberVisit(){
  try{const current=visitFingerprint(data);if(visitBaseline===undefined){const raw=localStorage.getItem('sabre-visit-v1');visitBaseline=raw?JSON.parse(raw):null;}const previous=visitBaseline;visitChanges=previous?{since:previous.at,...compareVisits(previous,current)}:{first:true};localStorage.setItem('sabre-visit-v1',JSON.stringify(current));}catch{visitChanges={unavailable:true};}
 }
 function changesPanel(){
- const c=visitChanges||{first:true};return `<section class="source-panel"><span class="source-tag">Published snapshots · this browser</span><h2>Since your last visit</h2>${c.first?'<p>First visit recorded. Changes will appear on your next visit.</p>':c.unavailable?'<p>Browser storage is unavailable; visit comparison is off.</p>':`<small>Compared with ${e(c.since.slice(0,10))}</small><ul><li>${c.updates} new project updates</li><li>${c.roadmap} changed Gantt rows</li><li>${c.completed} tasks changed to completed</li><li>${c.events} calendar entries added</li></ul>`}</section>`;
+ const c=visitChanges;if(!c||c.first||c.unavailable)return '';
+ const total=c.roadmap+c.completed+c.events;
+ return `<details class="visit-summary"><summary>${total?'Changes since your last visit':'No recorded changes since your last visit'}</summary><small>Compared with ${e(c.since.slice(0,10))} in this browser: ${c.roadmap} changed Gantt rows · ${c.completed} tasks completed · ${c.events} calendar entries added.</small></details>`;
 }
+function navigate(target){if(!views.includes(target))return;view=target;if(location.hash!=='#'+target)history.pushState(null,'','#'+target);render();window.scrollTo(0,0);$('#content').focus({preventScroll:true});}
+window.addEventListener('popstate',()=>{if(location.hash==='#content')return;view=views.includes(location.hash.slice(1))?location.hash.slice(1):'overview';if(data)render();});
 function overview(){
  const r=data.roadmap;
- return `<div class="overview-heading"><div><span class="eyebrow">Collaborator overview</span><h2>${e(data.overview.title)}</h2></div><button class="secondary" id="refresh-overview">Refresh</button></div><div class="freshness"><span>Published ${e(data.overview.updated||'date unavailable')}</span><ul>${sourceConnectionRows()}</ul></div>
- <section class="source-panel roadmap-preview"><div class="section-heading"><div><span class="source-tag">Original Gantt workbook</span><h2>Project roadmap</h2></div>${jump('gantt','Full Gantt')}</div><div class="preview-controls" hidden><select id="roadmap-stream"><option value=""></option></select><select id="roadmap-depth"><option value="bands"></option></select><select id="roadmap-scale"><option value="fit"></option></select><label><select id="roadmap-month"><option value=""></option></select></label></div><div id="roadmap-grid"></div><small>Solid: expected work · pale: pessimistic extension · ◇ milestone · ○ decision · △ arrival</small><details><summary>Workbook source details</summary><p>${e(r.warning)}</p></details></section>
- <div class="source-columns"><section class="source-panel"><div class="section-heading"><h2>Upcoming calendar</h2>${jump('calendar','Calendar')}</div>${agenda(true)}</section><section class="source-panel"><div class="section-heading"><h2>Recent project updates</h2>${jump('notes','All updates')}</div>${notesFeed(3)}</section></div>
- <section class="source-panel todoist-panel"><div class="section-heading"><div><span class="source-tag">Todoist · source order</span><h2>Project tasks</h2></div>${jump('tasks','All tasks')}</div>${todoistTree(true)}</section><div class="source-columns">${milestoneHistory()}${changesPanel()}</div><section class="source-panel"><div class="section-heading"><h2>Approved resources</h2>${jump('resources','All resources')}</div>${data.overview.resources.slice(0,3).map(r=>`<p>${sourceLink(r.url,r.title)||e(r.title)}</p>`).join('')||'<p class="empty">No approved resources yet.</p>'}</section>`;
+ return `<div class="overview-heading"><div><span class="eyebrow">Collaborator workspace</span><h2>${e(data.overview.title)}</h2><p class="program-context">V1 experiments, V2 construction, instrumentation and separation — follow the original roadmap and shared project material.</p></div><button class="secondary" id="refresh-overview" aria-label="Reload published project data">Refresh</button></div>
+ <div class="publication-bar"><small>Published ${e(data.overview.updated||'date unavailable')}</small><details><summary>Source coverage</summary><ul>${sourceConnectionRows()}</ul><small>Only approved material is shared here.</small></details></div>
+ <section class="source-panel roadmap-preview"><div class="section-heading"><div><span class="source-tag">Original Gantt workbook</span><h2>Project roadmap</h2></div>${jump('gantt','Full Gantt')}</div><div class="roadmap-actions"><small>Expand a workstream; select a row for dates and source details.</small><button class="inline-link" id="expand-roadmap">Expand all</button><button class="inline-link" id="collapse-roadmap">Collapse all</button></div><div class="preview-controls" hidden><select id="roadmap-stream"><option value=""></option></select><select id="roadmap-depth"><option value="bands"></option></select><select id="roadmap-scale"><option value="fit"></option></select><label><select id="roadmap-month"><option value=""></option></select></label></div><div id="roadmap-grid"></div><small>Solid: expected work · pale: pessimistic extension · ◇ milestone · ○ decision · △ arrival</small>${milestoneHistory(true)}<details><summary>Workbook source details</summary><p>${e(r.warning)}</p></details></section>
+ <div class="source-columns"><section class="source-panel"><div class="section-heading"><div><span class="source-tag">Approved Google Calendar entries</span><h2>Upcoming schedule</h2></div>${jump('calendar','Schedule')}</div>${agenda(true)}</section><section class="source-panel todoist-panel"><div class="section-heading"><div><span class="source-tag">Todoist · original organization</span><h2>Project tasks</h2></div>${jump('tasks','Browse tasks')}</div><div class="overview-task-list">${todoistTree(true)}</div></section></div>
+ <section class="source-panel"><div class="section-heading"><div><span class="source-tag">Shared reference material</span><h2>Resources for collaborators</h2></div>${jump('resources','Browse resources')}</div>${data.overview.resources.length?`<div class="resource-preview-grid">${data.overview.resources.slice(0,4).map(r=>`<article><small>${e(r.category||'Reference')}</small><h3>${resourceLink(r)}</h3>${r.description?`<p>${e(r.description)}</p>`:''}</article>`).join('')}</div>`:'<p class="empty">Approved papers, diagrams and reference links will appear here when shared.</p>'}</section>${changesPanel()}`;
 }
+function resourceLink(r){return r.url?sourceLink(r.url,r.title):`<a href="${e(r.download_url||'/files/'+encodeURIComponent(r.id))}" ${staticSite?'download':''}>${e(r.title)} ↓</a>`;}
 function sourceConnectionRows(){
  const labels={not_connected:'Not connected',pending_credentials:'Credentials pending',unverified:'Private import not yet verified',verified:'Connected',partial:'Connected · incomplete import',unavailable:'Source unavailable'};
  return Object.entries({calendar:'Google Calendar',todoist:'Todoist'}).map(([key,name])=>{const c=data.overview.source_connections?.[key]||{status:'not_connected'};return `<li><b>${name}:</b> ${e(labels[c.status]||labels.unverified)}${c.checked_at?' · Last check '+e(c.checked_at):''}</li>`;}).join('');
@@ -78,20 +79,23 @@ function sourceConnectionRows(){
 function calendarView(){return `<section class="source-panel"><h2>Google Calendar</h2>${agenda()}</section>`;}
 function resources(){
  const groups=[['reading','Background reading','Papers and explanations that provide context for the research.'],['reference','Reference files','Approved diagrams and low-sensitivity reference material.'],['tool','Useful tools','Links to tools collaborators can use while working on the project.']];
- return `<section class="intro resource-intro"><div><span class="eyebrow">Get up to speed</span><h2>Approved resources</h2><p>Use the Overview for recent work and the Gantt for the research schedule. Explore the supporting material below for more context.</p></div></section>${groups.map(([key,title,description])=>{
- const items=data.overview.resources.filter(r=>(['reading','tool'].includes(r.category)?r.category:'reference')===key);
+ return `<label class="search-field">Find a resource<input id="resource-search" type="search" value="${e(resourceQuery)}" placeholder="Search titles and descriptions"></label><div id="resource-results"><section class="intro resource-intro"><div><span class="eyebrow">Get up to speed</span><h2>Approved resources</h2><p>Approved papers, diagrams, tools and reference material.</p></div></section>${groups.map(([key,title,description])=>{
+ const items=data.overview.resources.filter(r=>[r.title,r.description].some(x=>(x||'').toLowerCase().includes(resourceQuery.toLowerCase()))).filter(r=>(['reading','tool'].includes(r.category)?r.category:'reference')===key);
  return items.length?`<section class="resource-group" aria-labelledby="resources-${key}"><h2 id="resources-${key}">${title}</h2><p class="resource-context">${description}</p>${items.map(r=>`<article class="resource-item"><small>${r.url?'External link · Opens in a new tab':'File download'}</small><h3><a href="${r.url?e(r.url):e(r.download_url||'/files/'+encodeURIComponent(r.id))}" ${r.url?'target="_blank" rel="noopener noreferrer"':(staticSite?'download':'')}>${e(r.title)} ${r.url?'↗':'↓'}</a></h3>${r.description?`<p>${e(r.description)}</p>`:''}</article>`).join('')}</section>`:'';
- }).join('')||'<p class="empty">No resources have been shared yet.</p>'}`;
+ }).join('')||'<p class="empty">No matching resources.</p>'}</div>`;
 }
 function render(){
  document.querySelectorAll('[data-view]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.view===view));
- $('#content').innerHTML=view==='gantt'?renderGantt():view==='resources'?resources():view==='notes'?`<section class="source-panel"><h2>Project updates</h2>${notesFeed()}</section>`:view==='tasks'?`<section class="source-panel"><span class="source-tag">Todoist</span><h2>Tasks by project and section</h2>${todoistTree()}</section>`:view==='calendar'?calendarView():overview();
- document.querySelectorAll('[data-jump]').forEach(b=>b.onclick=()=>{view=b.dataset.jump;render();window.scrollTo(0,0);});
+ $('#content').innerHTML=view==='gantt'?renderGantt():view==='resources'?resources():view==='tasks'?`<section class="source-panel"><span class="source-tag">Todoist</span><h2>Tasks by project and section</h2><div class="task-controls"><label>Find a task<input id="task-search" type="search" value="${e(taskQuery)}" placeholder="Search task, project or section"></label><label>Show<select id="task-scope"><option value="active" ${taskScope==='active'?'selected':''}>Active tasks</option><option value="all" ${taskScope==='all'?'selected':''}>All shared tasks</option></select></label></div><div id="task-results">${todoistTree(taskScope==='active',taskQuery)}</div></section>`:view==='calendar'?calendarView():overview();
+ document.querySelectorAll('[data-jump]').forEach(b=>b.onclick=()=>navigate(b.dataset.jump));
+ document.querySelectorAll('[data-open-roadmap]').forEach(b=>b.onclick=()=>showRoadmapEvidence(b.dataset.openRoadmap));
+ if(view==='tasks'){const update=()=>{$('#task-results').innerHTML=todoistTree(taskScope==='active',taskQuery);};$('#task-search').oninput=ev=>{taskQuery=ev.target.value;update();};$('#task-scope').onchange=ev=>{taskScope=ev.target.value;update();};}
+ if(view==='resources')$('#resource-search').oninput=ev=>{resourceQuery=ev.target.value;const wrapper=document.createElement('div');wrapper.innerHTML=resources();$('#resource-results').replaceChildren(...wrapper.querySelector('#resource-results').childNodes);};
  if(view==='gantt')restoreGanttSettings();
- if(view==='overview'){drawCompactRoadmap();$('#refresh-overview').onclick=()=>loadOverview();}
+ if(view==='overview'){drawCompactRoadmap();$('#refresh-overview').onclick=()=>loadOverview();$('#expand-roadmap').onclick=()=>document.querySelectorAll('.roadmap-group').forEach(g=>g.open=true);$('#collapse-roadmap').onclick=()=>document.querySelectorAll('.roadmap-group').forEach(g=>g.open=false);}
 }
 
-document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>{if(!data)return;view=b.dataset.view;render();});
+document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>{if(!data)return;navigate(b.dataset.view);});
 async function loadOverview(date=''){
  const sequence=++requestSequence;$('#message').textContent='Refreshing published overview…';
  try{
@@ -130,8 +134,8 @@ function drawRoadmap(){
  document.querySelectorAll('[data-roadmap-id]').forEach(b=>b.onclick=()=>showRoadmapEvidence(b.dataset.roadmapId));
 }
 function showRoadmapEvidence(id){
- if(view!=='gantt'){view='gantt';render();}
- const r=data.roadmap,row=r.rows.find(t=>t.id===id),ids=[id,...r.rows.filter(t=>t.parent===id).map(t=>t.id)],tasks=r.tasks.filter(t=>ids.includes(t.ID)),notes=roadmapNotes(ids);
+ if(view!=='gantt')navigate('gantt');
+ const r=data.roadmap,row=r.rows.find(t=>t.id===id);if(!row)return;const ids=[id,...r.rows.filter(t=>t.parent===id).map(t=>t.id)],tasks=r.tasks.filter(t=>ids.includes(t.ID)),notes=roadmapNotes(ids);
  const dateText=v=>v==='#VALUE!'?'Unavailable — source formula error':v||'Not scheduled';
  $('#roadmap-evidence').innerHTML=`<h2>${e(id)} · ${e(row.title)}</h2><p class="muted">Source: Gantt Overview, row ${row.row}. ${e(row.owner)}</p>${tasks.map(t=>`<details ${tasks.length===1?'open':''}><summary>${e(t.ID)} · ${e(t.Task)}</summary><p><b>Expected:</b> ${e(dateText(t['Start (expected)']))} → ${e(dateText(t['Finish (expected)']))}<br><b>Pessimistic:</b> ${e(dateText(t['Start (pessim.)']))} → ${e(dateText(t['Finish (pessim.)']))}</p><p>Predecessors: ${e(t.Predecessors||'None listed')}<br></p></details>`).join('')}<h3>Published research · ${notes.length} published updates</h3>${notes.map(n=>`<article class="reading-row"><small>${e(n.date)} · ${e(n.roadmap_task_id)}</small><p class="evidence">${e(n.cleaned_text??n.text)}</p></article>`).join('')||'<p>No evidence linked yet. This does not mean the work has not happened.</p>'}<p class="muted">Published updates describe reported work; they do not automatically establish completion. Updates outside the displayed weeks remain visible here.</p>`;
  $('#roadmap-evidence').tabIndex=-1;$('#roadmap-evidence').focus({preventScroll:true});$('#roadmap-evidence').scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth',block:'start'});
