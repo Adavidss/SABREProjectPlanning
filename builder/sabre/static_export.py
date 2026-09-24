@@ -18,9 +18,9 @@ def export_site(shared, output, today=None, days=90):
     content = public_content(shared)
     output.mkdir(parents=True)
     assets = Path(__file__).parent / 'static'
-    html = (assets / 'public.html').read_text().replace('href="/app.css"', 'href="./app.css"').replace('src="/public.js"', 'src="./public.js"').replace('<body class=', '<body data-static="true" class=')
+    html = (assets / 'public.html').read_text().replace('href="/app.css"', 'href="./app.css"').replace('src="/public.js"', 'src="./public.js"').replace('"/logo.svg"', '"./logo.svg"').replace('<body class=', '<body data-static="true" class=')
     (output / 'index.html').write_text(html)
-    for name in ('app.css', 'public.js'):
+    for name in ('app.css', 'public.js', 'logo.svg'):
         shutil.copyfile(assets / name, output / name)
     (output / '.nojekyll').touch()
     (output / 'files').mkdir()

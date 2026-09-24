@@ -1,5 +1,6 @@
 """Explicit publication boundary. Never reads private state, notes or connectors."""
 import json
+from urllib.parse import urlsplit
 import re
 from pathlib import Path
 from .roadmap import source_roadmap
@@ -21,18 +22,26 @@ def public_content(directory):
             'source_status':str(content.get('source_status','unknown')),'coverage':'Approved coordination metadata only.',
             'tasks':rows('tasks',('id','title','status','due_date','planned_date','completed_date','task_id','source','project_id','project_name','section_id','section_name','section_order','task_order','parent_id','url')+stamp),
             'updates':rows('updates',('id','date','task_id','title','summary','result','next_step','evidence_ref','kind','origin','source','url')+stamp),
-            'public_notes':rows('public_notes',('id','title','text','date','url','kind')+stamp),
+            'public_notes':rows('public_notes',('id','title','text','date','url','kind','workstream')+stamp),
+            'team':rows('team',('id','name','role','description','image','linkedin','scholar','publications')+stamp),
             'program':rows('program',('id','title','text','date','source','url','kind')+stamp),
             'events':rows('events',('id','title','start','end','timezone','location','source','synced_at')+stamp),
-            'resources':rows('resources',('id','title','description','category','url')+stamp)}
+            'resources':rows('resources',('id','title','description','category','url','workstream')+stamp)}
     for name in ('tasks','updates','resources','public_notes','program'):
         for item in result[name]:
             if not safe_url(item.get('url')):item['url']=''
     result['resources']=[r for r in result['resources'] if r['url'] or shared_file(directory,r['id']) is not None]
+    # Team profile links fail closed to their expected hosts; publications stay plain structured text.
+    for member in result['team']:
+        for key,host in (('linkedin','linkedin.com'),('scholar','scholar.google.com'),('image','')):
+            url=member.get(key,'')
+            if not safe_url(url) or not url.startswith('https://') or (host and urlsplit(url).hostname not in (host,'www.'+host)):member[key]=''
+        member['publications']=[p for p in ([x.strip() for x in line.split('|')] for line in member['publications'].splitlines()) if p[0]][:3]
+        member['publications']=[{'title':p[0][:300],'source':(p[1] if len(p)>1 else '')[:200],'year':(p[2] if len(p)>2 else '')[:4],'url':(p[3] if len(p)>3 and safe_url(p[3]) and p[3].startswith('https://') else '')} for p in member['publications']]
     # Calendar IDs are exported only for the explicit full-calendar opt-in; never raw embeds.
     cfg=content.get('display',{})
     if not isinstance(cfg,dict):cfg={}
-    result['display']={k:cfg.get(k,True) is True for k in ('show_roadmap','show_calendar','show_tasks','show_resources','show_notes','show_discussion','show_milestones','show_changes')}
+    result['display']={k:cfg.get(k,True) is True for k in ('show_roadmap','show_calendar','show_tasks','show_resources','show_notes','show_discussion','show_milestones','show_changes','show_team')}
     result['display']['intro']=str(cfg.get('intro','V1 experiments, V2 construction, instrumentation and separation.'))[:600]
     result['display']['theme']=cfg.get('theme') if cfg.get('theme') in ('navy','teal','purple') else 'navy'
     for key,default,maximum in [('calendar_days',14,90),('task_limit',3,100),('resource_limit',4,20)]:
