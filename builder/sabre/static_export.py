@@ -1,5 +1,6 @@
 """Export only explicitly public data for static hosting; never reads private state."""
 import argparse
+import hashlib
 import json
 import shutil
 from datetime import datetime, timedelta
@@ -18,7 +19,9 @@ def export_site(shared, output, today=None, days=90):
     content = public_content(shared)
     output.mkdir(parents=True)
     assets = Path(__file__).parent / 'static'
-    html = (assets / 'public.html').read_text().replace('href="/app.css"', 'href="./app.css"').replace('src="/public.js"', 'src="./public.js"').replace('"/logo.svg"', '"./logo.svg"').replace('<body class=', '<body data-static="true" class=')
+    # Content fingerprints: hosts cache CSS/JS for hours, so a new page must never pair with old assets.
+    version = {name: hashlib.sha256((assets / name).read_bytes()).hexdigest()[:12] for name in ('app.css', 'public.js', 'logo.svg')}
+    html = (assets / 'public.html').read_text().replace('href="/app.css"', f'href="./app.css?v={version["app.css"]}"').replace('src="/public.js"', f'src="./public.js?v={version["public.js"]}"').replace('"/logo.svg"', f'"./logo.svg?v={version["logo.svg"]}"').replace('<body class=', '<body data-static="true" class=')
     (output / 'index.html').write_text(html)
     for name in ('app.css', 'public.js', 'logo.svg'):
         shutil.copyfile(assets / name, output / name)
