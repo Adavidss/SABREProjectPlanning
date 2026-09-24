@@ -21,10 +21,11 @@ def public_content(directory):
             'source_status':str(content.get('source_status','unknown')),'coverage':'Approved coordination metadata only.',
             'tasks':rows('tasks',('id','title','status','due_date','planned_date','completed_date','task_id','source','project_id','project_name','section_id','section_name','section_order','task_order','parent_id','url')+stamp),
             'updates':rows('updates',('id','date','task_id','title','summary','result','next_step','evidence_ref','kind','origin','source','url')+stamp),
-            'public_notes':rows('public_notes',('id','title','text','date','url')+stamp),
+            'public_notes':rows('public_notes',('id','title','text','date','url','kind')+stamp),
+            'program':rows('program',('id','title','text','date','source','url','kind')+stamp),
             'events':rows('events',('id','title','start','end','timezone','location','source','synced_at')+stamp),
             'resources':rows('resources',('id','title','description','category','url')+stamp)}
-    for name in ('tasks','updates','resources','public_notes'):
+    for name in ('tasks','updates','resources','public_notes','program'):
         for item in result[name]:
             if not safe_url(item.get('url')):item['url']=''
     result['resources']=[r for r in result['resources'] if r['url'] or shared_file(directory,r['id']) is not None]
@@ -34,7 +35,7 @@ def public_content(directory):
     result['display']={k:cfg.get(k,True) is True for k in ('show_roadmap','show_calendar','show_tasks','show_resources','show_notes','show_discussion','show_milestones','show_changes')}
     result['display']['intro']=str(cfg.get('intro','V1 experiments, V2 construction, instrumentation and separation.'))[:600]
     result['display']['theme']=cfg.get('theme') if cfg.get('theme') in ('navy','teal','purple') else 'navy'
-    for key,default,maximum in [('calendar_days',14,90),('task_limit',12,100),('resource_limit',4,20)]:
+    for key,default,maximum in [('calendar_days',14,90),('task_limit',3,100),('resource_limit',4,20)]:
         try:result['display'][key]=max(1,min(maximum,int(cfg.get(key,default))))
         except (ValueError,TypeError):result['display'][key]=default
     calendar_id=str(cfg.get('calendar_id',''))
