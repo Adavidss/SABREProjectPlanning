@@ -1,6 +1,6 @@
 'use strict';
 const staticSite=document.body.dataset.static==='true';
-const views=['overview','gantt','calendar','tasks','resources','discussion'];
+const views=['overview','gantt','calendar','tasks','resources','notes','discussion'];
 let data,view=views.includes(location.hash.slice(1))?location.hash.slice(1):'overview',requestSequence=0,ganttSettings={},taskQuery='',resourceQuery='',taskScope='active';
 const $=s=>document.querySelector(s),e=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function restoreGanttSettings(){
@@ -16,6 +16,8 @@ function sourceLink(url,label='Open source ↗'){
 }
 function jump(target,label){return `<button class="inline-link" data-jump="${target}">${label} ↗</button>`;}
 function todoistTree(activeOnly=false,query='',limit=Infinity){
+ if(data.todoistError)return '<p class="empty">Live Todoist could not refresh. Reload the page to retry; no stale task list is shown.</p>';
+ if(data.liveTodoist)return liveTodoistTree(query,limit);
  const tasks=(data.overview.tasks||[]).filter(t=>t.source==='Todoist'||t.id?.startsWith('todoist:')).filter(t=>!activeOnly||!['completed','cancelled'].includes(t.status));
  const needle=query.trim().toLowerCase();const matches=t=>[t.title,t.project_name,t.section_name].some(v=>(v||'').toLowerCase().includes(needle));const keep=new Set();if(needle)for(const task of tasks.filter(matches)){let t=task;while(t&&!keep.has(t)){keep.add(t);t=t.parent_id?tasks.find(p=>p.id==='todoist:'+t.parent_id||p.id===t.parent_id):null;}}const selected=needle?tasks.filter(t=>keep.has(t)):tasks;
  const projects=new Map();for(const t of selected.slice(0,limit)){const id=t.project_id||'';if(!projects.has(id))projects.set(id,[]);projects.get(id).push(t);}
@@ -28,6 +30,7 @@ function todoistTree(activeOnly=false,query='',limit=Infinity){
  }).join('')}</section>`;}).join('')||`<p class="empty">${needle?'No tasks match this search.':'No '+(activeOnly?'active ':'')+'tasks shared yet.'}</p>`;
 }
 function agenda(compact=false){
+ if(data.overview.display?.full_calendar)return calendarEmbed(compact);
  const events=[...(data.overview.events||[])].sort((a,b)=>a.start.localeCompare(b.start));
  const today=new Date().toLocaleDateString('en-CA'),end=new Date();end.setDate(end.getDate()+(data.overview.display?.calendar_days||14));
  const cutoff=end.toLocaleDateString('en-CA');
@@ -68,13 +71,13 @@ function overview(){
  return `<div class="overview-heading"><div><span class="eyebrow">Collaborator workspace</span><h2>${e(data.overview.title)}</h2><p class="program-context">${e(cfg.intro??'V1 experiments, V2 construction, instrumentation and separation.')}</p></div><button class="secondary" id="refresh-overview" aria-label="Reload published project data">Refresh</button></div>
  <div class="publication-bar"><small>Published ${e(data.overview.updated||'date unavailable')}</small><details><summary>Source coverage</summary><ul>${sourceConnectionRows()}</ul><small>Only approved material is shared here.</small></details></div>
  <section class="source-panel roadmap-preview" ${cfg.show_roadmap===false?'hidden':''}><div class="section-heading"><div><span class="source-tag">Original Gantt workbook</span><h2>Project roadmap</h2></div>${jump('gantt','Full Gantt')}</div><div class="roadmap-actions"><small>Expand a workstream; select a row for dates and source details.</small><button class="inline-link" id="expand-roadmap">Expand all</button><button class="inline-link" id="collapse-roadmap">Collapse all</button></div><div class="preview-controls" hidden><select id="roadmap-stream"><option value=""></option></select><select id="roadmap-depth"><option value="bands"></option></select><select id="roadmap-scale"><option value="fit"></option></select><label><select id="roadmap-month"><option value=""></option></select></label></div><div id="roadmap-grid"></div><small>Solid: expected work · pale: pessimistic extension · ◇ milestone · ○ decision · △ arrival</small>${cfg.show_milestones===false?'':milestoneHistory(true)}<details><summary>Workbook source details</summary><p>${e(r.warning)}</p></details></section>
- <div class="source-columns configurable-columns"><section class="source-panel" ${cfg.show_calendar===false?'hidden':''}><div class="section-heading"><div><span class="source-tag">Approved Google Calendar entries</span><h2>Upcoming schedule</h2></div>${jump('calendar','Schedule')}</div>${agenda(true)}</section><section class="source-panel todoist-panel" ${cfg.show_tasks===false?'hidden':''}><div class="section-heading"><div><span class="source-tag">Todoist · original organization</span><h2>Project tasks</h2></div>${jump('tasks','Browse tasks')}</div><div class="overview-task-list">${todoistTree(true,'',cfg.task_limit||12)}${data.overview.tasks.length>(cfg.task_limit||12)?'<small>Showing a source-order subset. Open Browse tasks for the full shared list.</small>':''}</div></section></div>
+ <div class="source-columns configurable-columns"><section class="source-panel" ${cfg.show_calendar===false?'hidden':''}><div class="section-heading"><div><span class="source-tag">Google Calendar</span><h2>Upcoming schedule</h2></div>${jump('calendar','Schedule')}</div>${agenda(true)}</section><section class="source-panel todoist-panel" ${cfg.show_tasks===false?'hidden':''}><div class="section-heading"><div><span class="source-tag">Todoist · original organization</span><h2>Project tasks</h2></div>${jump('tasks','Browse tasks')}</div><div class="overview-task-list">${todoistTree(true,'',cfg.task_limit||12)}${data.overview.tasks.length>(cfg.task_limit||12)?'<small>Showing a source-order subset. Open Browse tasks for the full shared list.</small>':''}</div></section></div>
  <section class="source-panel" ${cfg.show_resources===false?'hidden':''}><div class="section-heading"><div><span class="source-tag">Shared reference material</span><h2>Resources for collaborators</h2></div>${jump('resources','Browse resources')}</div>${data.overview.resources.length?`<div class="resource-preview-grid">${data.overview.resources.slice(0,cfg.resource_limit||4).map(r=>`<article><small>${e(r.category||'Reference')}</small><h3>${resourceLink(r)}</h3>${r.description?`<p>${e(r.description)}</p>`:''}</article>`).join('')}</div>`:'<p class="empty">Approved papers, diagrams and reference links will appear here when shared.</p>'}</section>${cfg.show_changes===false?'':changesPanel()}`;
 }
 function resourceLink(r){return r.url?sourceLink(r.url,r.title):`<a href="${e(r.download_url||'/files/'+encodeURIComponent(r.id))}" ${staticSite?'download':''}>${e(r.title)} ↓</a>`;}
 function sourceConnectionRows(){
  const labels={not_connected:'Not connected',pending_credentials:'Credentials pending',unverified:'Private import not yet verified',verified:'Connected',partial:'Connected · incomplete import',unavailable:'Source unavailable'};
- return Object.entries({calendar:'Google Calendar',todoist:'Todoist'}).map(([key,name])=>{const c=data.overview.source_connections?.[key]||{status:'not_connected'};return `<li><b>${name}:</b> ${e(labels[c.status]||labels.unverified)}${c.checked_at?' · Last check '+e(c.checked_at):''}</li>`;}).join('');
+ return Object.entries({calendar:'Google Calendar',todoist:'Todoist'}).map(([key,name])=>{const c=key==='todoist'&&data.liveTodoist?{status:'verified',checked_at:data.liveTodoist.fetched_at}:data.overview.source_connections?.[key]||{status:'not_connected'};return `<li><b>${name}:</b> ${e(labels[c.status]||labels.unverified)}${c.checked_at?' · Last check '+e(c.checked_at):''}</li>`;}).join('');
 }
 function calendarView(){return `<section class="source-panel"><h2>Google Calendar</h2>${agenda()}</section>`;}
 function resources(){
@@ -85,9 +88,9 @@ function resources(){
  }).join('')||'<p class="empty">No matching resources.</p>'}</div>`;
 }
 function render(){
- const cfg=data.overview.display||{};document.documentElement.dataset.theme=cfg.theme||'navy';const shown=v=>({gantt:cfg.show_roadmap,calendar:cfg.show_calendar,tasks:cfg.show_tasks,resources:cfg.show_resources,discussion:cfg.show_discussion})[v]!==false;if(!shown(view))view='overview';document.querySelectorAll('[data-view]').forEach(b=>b.hidden=!shown(b.dataset.view));
+ const cfg=data.overview.display||{};document.documentElement.dataset.theme=cfg.theme||'navy';const shown=v=>({gantt:cfg.show_roadmap,calendar:cfg.show_calendar,tasks:cfg.show_tasks,resources:cfg.show_resources,notes:cfg.show_notes,discussion:cfg.show_discussion})[v]!==false;if(!shown(view))view='overview';document.querySelectorAll('[data-view]').forEach(b=>b.hidden=!shown(b.dataset.view));
  document.querySelectorAll('[data-view]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.view===view));
- $('#content').innerHTML=view==='discussion'?discussionView():view==='gantt'?renderGantt():view==='resources'?resources():view==='tasks'?`<section class="source-panel"><span class="source-tag">Todoist</span><h2>Tasks by project and section</h2><div class="task-controls"><label>Find a task<input id="task-search" type="search" value="${e(taskQuery)}" placeholder="Search task, project or section"></label><label>Show<select id="task-scope"><option value="active" ${taskScope==='active'?'selected':''}>Active tasks</option><option value="all" ${taskScope==='all'?'selected':''}>All shared tasks</option></select></label></div><div id="task-results">${todoistTree(taskScope==='active',taskQuery)}</div></section>`:view==='calendar'?calendarView():overview();
+ $('#content').innerHTML=view==='notes'?notesView():view==='discussion'?discussionView():view==='gantt'?renderGantt():view==='resources'?resources():view==='tasks'?`<section class="source-panel"><span class="source-tag">Todoist</span><h2>Tasks by project and section</h2><div class="task-controls"><label>Find a task<input id="task-search" type="search" value="${e(taskQuery)}" placeholder="Search task, project or section"></label><label>Show<select id="task-scope"><option value="active" ${taskScope==='active'?'selected':''}>Active tasks</option><option value="all" ${taskScope==='all'?'selected':''}>All shared tasks</option></select></label></div><div id="task-results">${todoistTree(taskScope==='active',taskQuery)}</div></section>`:view==='calendar'?calendarView():overview();
  document.querySelectorAll('[data-jump]').forEach(b=>b.onclick=()=>navigate(b.dataset.jump));
  document.querySelectorAll('[data-open-roadmap]').forEach(b=>b.onclick=()=>showRoadmapEvidence(b.dataset.openRoadmap));
  if(view==='tasks'){const update=()=>{$('#task-results').innerHTML=todoistTree(taskScope==='active',taskQuery);};$('#task-search').oninput=ev=>{taskQuery=ev.target.value;update();};$('#task-scope').onchange=ev=>{taskScope=ev.target.value;update();};}
@@ -106,7 +109,7 @@ async function loadOverview(date=''){
    if(date<next.static_range.start||date>next.static_range.finish)throw Error('Date outside published range');
    const recap=await fetch('./recaps/'+encodeURIComponent(date)+'.json',{cache:'no-cache'});if(!recap.ok)throw Error();next.periods=await recap.json();next.selected_date=date;
   }
-  if(sequence!==requestSequence)return;data=next;rememberVisit();render();$('#message').textContent='';
+  if(sequence!==requestSequence)return;data=next;rememberVisit();render();$('#message').textContent='';loadLiveTodoist(sequence);
  }
  catch{if(sequence!==requestSequence)return;if(data&&$('#review-date'))$('#review-date').value=data.selected_date;$('#message').textContent=data?'Refresh failed. The previous overview remains visible; its dates have not changed.':'Overview could not load. Reload the page to try again.';}
 }
@@ -160,4 +163,25 @@ function drawCompactRoadmap(){
 function discussionView(){
  const board='https://sabre-member-board.domotota.workers.dev';
  return `<section class="source-panel"><span class="source-tag">Collaborator discussion</span><h2>Discuss the project</h2><p>Anyone can read. Only approved members can post. Sign in with GitHub to request access; the project owner approves requests.</p><p><a href="${board}" target="_blank" rel="noopener noreferrer">Open member board to sign in or post ↗</a></p>${window.self===window.top?`<iframe class="member-board" title="SABRE collaborator discussion board" src="${board}" loading="lazy" referrerpolicy="no-referrer"></iframe>`:'<p class="muted">Open the member board in your browser to preview the live discussion.</p>'}</section>`;
+}
+
+function calendarEmbed(compact=false){
+ const id=data.overview.display.calendar_id;if(!id)return '<p>Calendar ID is unavailable.</p>';
+ const url=new URL('https://calendar.google.com/calendar/embed');url.searchParams.set('src',id);url.searchParams.set('ctz','America/New_York');url.searchParams.set('mode',compact?'AGENDA':'WEEK');
+ if(location.hostname==='127.0.0.1'&&location.pathname.startsWith('/preview/'))return `<p>Full Google Calendar enabled.</p>${sourceLink(url.href,'Open live calendar preview ↗')}<small>On the published website, this appears as an embedded calendar.</small>`;
+ return `<div class="google-calendar"><small>Live Google Calendar · Google sharing permissions apply</small><iframe title="Google Calendar${compact?' agenda':''}" src="${e(url.href)}" loading="lazy" referrerpolicy="no-referrer" class="${compact?'compact-calendar':'full-calendar'}"></iframe>${sourceLink(url.href,'Open full calendar ↗')}<small>If Google reports no access, the calendar owner must adjust its sharing permissions.</small></div>`;
+}
+function notesView(){const notes=[...(data.overview.public_notes||[])].sort((a,b)=>b.date.localeCompare(a.date));return `<section class="source-panel"><span class="source-tag">Owner-published notes</span><h2>Research notes</h2>${notes.map(n=>`<article class="published-note"><time>${e(n.date)}</time><h3>${e(n.title)}</h3><div class="note-text">${e(n.text)}</div>${sourceLink(n.url)}</article>`).join('')||'<p class="empty">No notes published yet.</p>'}</section>`;}
+async function loadLiveTodoist(sequence){
+ try{const r=await fetch('https://sabre-member-board.domotota.workers.dev/public/todoist',{cache:'no-store',signal:AbortSignal.timeout(20000)});if(!r.ok)throw Error();const value=await r.json();if(sequence!==requestSequence)return;if(value.enabled){data.liveTodoist=value;data.overview.tasks=value.tasks;}data.todoistError=false;render();}
+ catch{if(sequence!==requestSequence)return;data.todoistError=true;render();}
+}
+function liveTodoistTree(query='',limit=Infinity){
+ const live=data.liveTodoist,needle=query.trim().toLowerCase();let remaining=limit;
+ const sections=live.sections.map(section=>{const all=live.tasks.filter(t=>t.section_id===section.id);const matches=t=>[t.title,t.description,section.name,live.project.name].some(x=>(x||'').toLowerCase().includes(needle));const keep=new Set();for(const t of all.filter(matches)){let current=t;while(current&&!keep.has(current.id)){keep.add(current.id);current=all.find(p=>p.id==='todoist:'+current.parent_id);}}const filtered=needle?all.filter(t=>keep.has(t.id)):all;
+ if(needle&&!filtered.length)return '';const rows=filtered.slice(0,Math.max(0,remaining));remaining-=rows.length;
+ const ordered=[],seen=new Set(),walk=(t,depth=0)=>{if(seen.has(t.id))return;seen.add(t.id);ordered.push([t,depth]);rows.filter(c=>t.id==='todoist:'+c.parent_id).forEach(c=>walk(c,Math.min(depth+1,5)));};rows.filter(t=>!rows.some(p=>p.id==='todoist:'+t.parent_id)).forEach(t=>walk(t));rows.forEach(t=>walk(t));
+ return `<div class="todoist-section"><h4>${e(section.name)} <small>${all.length}</small></h4><ul>${ordered.map(([t,depth])=>`<li style="--depth:${depth}"><span aria-hidden="true">○</span><div>${sourceLink(t.url,t.title)||e(t.title)}${t.due_date?`<small>Due ${e(t.due_date)}</small>`:''}${t.description?`<details><summary>Description</summary><div class="note-text">${e(t.description)}</div></details>`:''}</div></li>`).join('')}</ul>${filtered.length>rows.length?'<small>More tasks in the Tasks view.</small>':!all.length?'<small>No active tasks.</small>':''}</div>`;
+ }).join('');
+ return `<section class="todoist-project"><small>Live Todoist · refreshed ${e(new Date(live.fetched_at).toLocaleString())}</small><h3>${e(live.project.name)}</h3><div class="todoist-sections ${live.layout==='columns'?'section-columns':''}">${sections||'<p>No matching tasks.</p>'}</div></section>`;
 }
