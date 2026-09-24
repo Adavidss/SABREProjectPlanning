@@ -1,6 +1,6 @@
 'use strict';
 const staticSite=document.body.dataset.static==='true';
-const views=['overview','gantt','calendar','tasks','resources'];
+const views=['overview','gantt','calendar','tasks','resources','discussion'];
 let data,view=views.includes(location.hash.slice(1))?location.hash.slice(1):'overview',requestSequence=0,ganttSettings={},taskQuery='',resourceQuery='',taskScope='active';
 const $=s=>document.querySelector(s),e=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function restoreGanttSettings(){
@@ -85,9 +85,9 @@ function resources(){
  }).join('')||'<p class="empty">No matching resources.</p>'}</div>`;
 }
 function render(){
- const cfg=data.overview.display||{};document.documentElement.dataset.theme=cfg.theme||'navy';const shown=v=>({gantt:cfg.show_roadmap,calendar:cfg.show_calendar,tasks:cfg.show_tasks,resources:cfg.show_resources})[v]!==false;if(!shown(view))view='overview';document.querySelectorAll('[data-view]').forEach(b=>b.hidden=!shown(b.dataset.view));
+ const cfg=data.overview.display||{};document.documentElement.dataset.theme=cfg.theme||'navy';const shown=v=>({gantt:cfg.show_roadmap,calendar:cfg.show_calendar,tasks:cfg.show_tasks,resources:cfg.show_resources,discussion:cfg.show_discussion})[v]!==false;if(!shown(view))view='overview';document.querySelectorAll('[data-view]').forEach(b=>b.hidden=!shown(b.dataset.view));
  document.querySelectorAll('[data-view]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.view===view));
- $('#content').innerHTML=view==='gantt'?renderGantt():view==='resources'?resources():view==='tasks'?`<section class="source-panel"><span class="source-tag">Todoist</span><h2>Tasks by project and section</h2><div class="task-controls"><label>Find a task<input id="task-search" type="search" value="${e(taskQuery)}" placeholder="Search task, project or section"></label><label>Show<select id="task-scope"><option value="active" ${taskScope==='active'?'selected':''}>Active tasks</option><option value="all" ${taskScope==='all'?'selected':''}>All shared tasks</option></select></label></div><div id="task-results">${todoistTree(taskScope==='active',taskQuery)}</div></section>`:view==='calendar'?calendarView():overview();
+ $('#content').innerHTML=view==='discussion'?discussionView():view==='gantt'?renderGantt():view==='resources'?resources():view==='tasks'?`<section class="source-panel"><span class="source-tag">Todoist</span><h2>Tasks by project and section</h2><div class="task-controls"><label>Find a task<input id="task-search" type="search" value="${e(taskQuery)}" placeholder="Search task, project or section"></label><label>Show<select id="task-scope"><option value="active" ${taskScope==='active'?'selected':''}>Active tasks</option><option value="all" ${taskScope==='all'?'selected':''}>All shared tasks</option></select></label></div><div id="task-results">${todoistTree(taskScope==='active',taskQuery)}</div></section>`:view==='calendar'?calendarView():overview();
  document.querySelectorAll('[data-jump]').forEach(b=>b.onclick=()=>navigate(b.dataset.jump));
  document.querySelectorAll('[data-open-roadmap]').forEach(b=>b.onclick=()=>showRoadmapEvidence(b.dataset.openRoadmap));
  if(view==='tasks'){const update=()=>{$('#task-results').innerHTML=todoistTree(taskScope==='active',taskQuery);};$('#task-search').oninput=ev=>{taskQuery=ev.target.value;update();};$('#task-scope').onchange=ev=>{taskScope=ev.target.value;update();};}
@@ -155,4 +155,9 @@ function drawCompactRoadmap(){
  }).join('')}</div>`;
  if(view==='overview'){const root=$('#roadmap-grid .compact-gantt');let group;[...root.children].forEach(el=>{if(el.matches('.compact-section')){group=document.createElement('details');group.className='roadmap-group';const heading=document.createElement('summary');heading.textContent=el.textContent;group.append(heading);el.replaceWith(group);}else if(group){group.append(el);}});const groups=root.querySelectorAll('.roadmap-group');groups.forEach((g,i)=>{g.open=i===1;const count=g.querySelectorAll('.compact-row').length;g.querySelector('summary').append(' · '+count+' rows');});}
  document.querySelectorAll('[data-roadmap-id]').forEach(b=>b.onclick=()=>showRoadmapEvidence(b.dataset.roadmapId));
+}
+
+function discussionView(){
+ const board='https://sabre-member-board.domotota.workers.dev';
+ return `<section class="source-panel"><span class="source-tag">Collaborator discussion</span><h2>Discuss the project</h2><p>Anyone can read. Only approved members can post. Sign in with GitHub to request access; the project owner approves requests.</p><p><a href="${board}" target="_blank" rel="noopener noreferrer">Open member board to sign in or post ↗</a></p>${window.self===window.top?`<iframe class="member-board" title="SABRE collaborator discussion board" src="${board}" loading="lazy" referrerpolicy="no-referrer"></iframe>`:'<p class="muted">Open the member board in your browser to preview the live discussion.</p>'}</section>`;
 }

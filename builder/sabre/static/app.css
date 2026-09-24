@@ -66,3 +66,5 @@ body{background:#fff}header{background:#fff;color:var(--ink);border-bottom:1px s
 @media(max-width:650px){.resource-preview-grid{grid-template-columns:1fr}.task-controls{grid-template-columns:1fr}.publication-bar{align-items:start;gap:12px}.overview-heading{align-items:start}.program-context{font-size:14px}.overview-heading button{font-size:12px;padding:8px}.roadmap-actions small{flex-basis:100%}.overview-task-list{max-height:340px}}
 
 :root[data-theme="teal"]{--navy:#285e64}:root[data-theme="purple"]{--navy:#55436d}.collaborator-view .source-panel{border-top-color:var(--navy)}.collaborator-view .compact-axis{background:var(--navy)}.configurable-columns:has(>section[hidden]){grid-template-columns:1fr}.configurable-columns:has(>section[hidden]):not(:has(>section:not([hidden]))){display:none}
+
+.member-board{width:100%;height:760px;border:1px solid #d8e1e9;border-radius:10px;background:#f4f7fa}@media(max-width:600px){.member-board{height:680px}}
