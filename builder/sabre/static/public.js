@@ -78,7 +78,7 @@ function overview(){
 function resourceLink(r){return r.url?sourceLink(r.url,r.title):`<a href="${e(r.download_url||'/files/'+encodeURIComponent(r.id))}" ${staticSite?'download':''}>${e(r.title)} ↓</a>`;}
 function sourceConnectionRows(){
  const labels={not_connected:'Not connected',pending_credentials:'Credentials pending',unverified:'Private import not yet verified',verified:'Connected',partial:'Connected · incomplete import',unavailable:'Source unavailable'};
- return Object.entries({calendar:'Google Calendar',todoist:'Todoist'}).map(([key,name])=>{const c=key==='todoist'&&data.liveTodoist?{status:'verified',checked_at:data.liveTodoist.fetched_at}:data.overview.source_connections?.[key]||{status:'not_connected'};return `<li><b>${name}:</b> ${e(labels[c.status]||labels.unverified)}${c.checked_at?' · Last check '+e(c.checked_at):''}</li>`;}).join('');
+ return Object.entries({calendar:'Google Calendar',todoist:'Todoist'}).map(([key,name])=>{const c=key==='todoist'&&data.liveTodoist?{status:'verified',checked_at:data.liveTodoist.fetched_at}:data.overview.source_connections?.[key]||{status:'not_connected'};return `<li><b>${name}:</b> ${e(labels[c.status]||labels.unverified)}${c.checked_at?' · Last check '+e(/T/.test(c.checked_at)&&!isNaN(Date.parse(c.checked_at))?new Date(c.checked_at).toLocaleString():c.checked_at):''}</li>`;}).join('');
 }
 function calendarView(){return `<section class="source-panel"><h2>Google Calendar</h2>${agenda()}</section>`;}
 function resources(){
